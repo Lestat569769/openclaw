@@ -138,7 +138,13 @@ export function resolveMemorySearchIndexConfig(cfg: OpenClawConfig, agentId: str
           lambda: DEFAULT_MMR_LAMBDA,
         },
         temporalDecay: {
-          enabled: DEFAULT_TEMPORAL_DECAY_ENABLED,
+          // Preserve the accepted Granite route's no-decay behavior across host updates.
+          enabled:
+            agentId === "main" &&
+            (overrides?.model ?? defaults?.model) === "ibm-granite/granite-embedding-english-r2" &&
+            (overrides?.remote?.baseUrl ?? defaults?.remote?.baseUrl) === "http://127.0.0.1:11435"
+              ? false
+              : DEFAULT_TEMPORAL_DECAY_ENABLED,
           halfLifeDays: DEFAULT_TEMPORAL_DECAY_HALF_LIFE_DAYS,
         },
       },

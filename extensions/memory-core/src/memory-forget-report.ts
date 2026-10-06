@@ -3,6 +3,22 @@ import type { MemorySessionTarget } from "openclaw/plugin-sdk/memory-core-host-e
 export type MemoryForgetReport = {
   agentId: string;
   dryRun: boolean;
+  mixedLineagePolicy: "whole-entry" | "refuse";
+  disposition: "preview" | "refused" | "applied" | "no-targets";
+  effects: "none" | "applied";
+  cachePolicy: {
+    scope: "agent-wide-recomputable";
+    sourceAttribution: "unavailable";
+    reasons: ["unattributed-schema", "unpublished-cache-coverage"];
+  };
+  indexScope: Array<{
+    id: string;
+    path: string;
+    source: string;
+    reasons: Array<
+      "changed-file" | "indexed-memory-snapshot" | "selected-session" | "stale-internal-session"
+    >;
+  }>;
   sessionIds: string[];
   participantMatches: Array<{ actorId: string; identities: MemorySessionTarget["participants"] }>;
   sessionResolutions: Array<{

@@ -19,7 +19,11 @@ import {
 } from "../secrets/runtime-degraded-state.js";
 import { runtimeMemorySecretOwnerId } from "../secrets/runtime-memory-secret-owner.js";
 import { resolveOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.paths.js";
-import { resolveMemorySearchConfig, resolveMemorySearchSyncConfig } from "./memory-search.js";
+import {
+  resolveMemorySearchConfig,
+  resolveMemorySearchIndexConfig,
+  resolveMemorySearchSyncConfig,
+} from "./memory-search.js";
 
 const asConfig = (cfg: OpenClawConfig): OpenClawConfig => ({
   ...cfg,
@@ -75,6 +79,155 @@ describe("memory search config", () => {
   afterEach(() => {
     setActiveDegradedSecretOwners([]);
   });
+
+  it.each([
+    [
+      "exact default route",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      undefined,
+      undefined,
+      false,
+    ],
+    [
+      "other agent",
+      "other",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      undefined,
+      undefined,
+      true,
+    ],
+    [
+      "agent case differs",
+      "Main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      undefined,
+      undefined,
+      true,
+    ],
+    ["other model", "main", "another-model", "http://127.0.0.1:11435", undefined, undefined, true],
+    [
+      "other endpoint",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11436",
+      undefined,
+      undefined,
+      true,
+    ],
+    [
+      "endpoint trailing slash",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435/",
+      undefined,
+      undefined,
+      true,
+    ],
+    ["missing model", "main", undefined, "http://127.0.0.1:11435", undefined, undefined, true],
+    [
+      "missing endpoint",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      undefined,
+      undefined,
+      undefined,
+      true,
+    ],
+    [
+      "exact override route",
+      "main",
+      "another-model",
+      "http://127.0.0.1:11436",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      false,
+    ],
+    [
+      "override model with inherited endpoint",
+      "main",
+      "another-model",
+      "http://127.0.0.1:11435",
+      "ibm-granite/granite-embedding-english-r2",
+      undefined,
+      false,
+    ],
+    [
+      "override endpoint with inherited model",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11436",
+      undefined,
+      "http://127.0.0.1:11435",
+      false,
+    ],
+    [
+      "different model override",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      "another-model",
+      undefined,
+      true,
+    ],
+    [
+      "different endpoint override",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      undefined,
+      "http://127.0.0.1:11436",
+      true,
+    ],
+    [
+      "empty model override",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      "",
+      undefined,
+      true,
+    ],
+    [
+      "empty endpoint override",
+      "main",
+      "ibm-granite/granite-embedding-english-r2",
+      "http://127.0.0.1:11435",
+      undefined,
+      "",
+      true,
+    ],
+  ] as const)(
+    "preserves Granite decay exception without broadening defaults: %s",
+    (_label, agentId, model, baseUrl, overrideModel, overrideBaseUrl, expectedDecay) => {
+      const cfg = asConfig({
+        memory: { search: { provider: "none", model, remote: { baseUrl } } },
+        agents: {
+          list: [
+            {
+              id: agentId,
+              memory: { search: { model: overrideModel, remote: { baseUrl: overrideBaseUrl } } },
+            },
+          ],
+        },
+      });
+      const before = structuredClone(cfg);
+      const index = resolveMemorySearchIndexConfig(cfg, agentId);
+      const full = resolveMemorySearchConfig(cfg, agentId);
+      expect(index?.query.hybrid.temporalDecay).toEqual({
+        enabled: expectedDecay,
+        halfLifeDays: 30,
+      });
+      expect(full?.query).toEqual(index?.query);
+      expect(index?.query.hybrid.mmr).toEqual({ enabled: true, lambda: 0.7 });
+      expect(index?.query.hybrid.vectorWeight).toBe(0.7);
+      expect(full?.sync).toEqual(resolveMemorySearchSyncConfig(cfg, agentId));
+      expect(cfg).toEqual(before);
+    },
+  );
 
   it("bounds the embedding cache with a built-in default", () => {
     // #111382 purged `memory.search.cache.maxEntries` from the config contract and replaced it

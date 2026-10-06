@@ -288,6 +288,7 @@ export async function runMemoryForget(opts: MemoryForgetCommandOptions) {
       hookSources: opts.hookSource,
       participants: opts.participant,
       since: opts.since,
+      mixedLineage: opts.mixedLineage,
       dryRun: Boolean(opts.dryRun),
     });
     if (opts.json) {
@@ -298,8 +299,12 @@ export async function runMemoryForget(opts: MemoryForgetCommandOptions) {
       `${heading(report.dryRun ? "Memory Deletion Preview" : "Memory Deletion")} ${muted(`(${agentId})`)}`,
       `${muted("Source sessions:")} ${report.sessionIds.length}`,
       `${muted("Source transcripts retained:")} ${report.sessionIds.length}`,
-      `${muted("Deleted entries:")} ${report.entryKeys.length}`,
-      `${muted("Mixed-lineage entries deleted whole:")} ${report.mixedLineageEntryKeys.length}`,
+      `${muted("Disposition:")} ${report.disposition}; effects: ${report.effects}`,
+      `${muted("Mixed-lineage policy:")} ${report.mixedLineagePolicy}`,
+      `${muted(report.effects === "applied" ? "Deleted entries:" : "Planned entries:")} ${report.entryKeys.length}`,
+      `${muted(report.mixedLineagePolicy === "refuse" ? "Mixed-lineage entries requiring refusal:" : "Mixed-lineage entries selected whole:")} ${report.mixedLineageEntryKeys.length}`,
+      `${muted("Cache policy:")} ${report.cachePolicy.scope}; source attribution ${report.cachePolicy.sourceAttribution}; reasons: ${report.cachePolicy.reasons.join(", ")}`,
+      `${muted("Artifact counts:")} ${report.effects === "applied" ? "applied plan" : "proposed plan only, not applied"}`,
       `${muted("Entries without targetable provenance:")} ${report.untargetableEntryKeys.length}`,
       `${muted("Curated writes retained:")} ${report.curatedWrites.length}`,
       `${muted("Memory artifacts:")} ${report.artifacts.memoryFiles} files, ${report.artifacts.memoryEntries} entries, ${report.artifacts.memoryLines} quoted lines`,
@@ -330,6 +335,11 @@ export async function runMemoryForget(opts: MemoryForgetCommandOptions) {
     for (const curatedWrite of report.curatedWrites) {
       lines.push(
         `${muted("Curated write retained:")} ${curatedWrite.relativePath} (${new Date(curatedWrite.observedAt).toISOString()})`,
+      );
+    }
+    for (const chunk of report.indexScope) {
+      lines.push(
+        `${muted("Index scope:")} ${chunk.id} (${chunk.path}, ${chunk.source}): ${chunk.reasons.join(", ")}`,
       );
     }
     for (const refusal of report.refusals) {

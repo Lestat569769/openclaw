@@ -23,6 +23,7 @@ export type MemoryForgetCommandOptions = MemoryCommandOptions & {
   participant?: string[];
   since?: string;
   dryRun?: boolean;
+  mixedLineage?: "whole-entry" | "refuse";
 };
 
 export type MemoryPromoteCommandOptions = MemoryCommandOptions & {

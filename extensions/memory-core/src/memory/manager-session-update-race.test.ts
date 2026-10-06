@@ -543,10 +543,8 @@ describe("memory session update sync", () => {
       sessionKey: decoyKey,
       messages: [{ role: "user", timestamp: 1, content: "Previously indexed amber fragment." }],
     });
-    const manager = await getFreshManager(
-      createConfig({ provider: "none", sources: ["sessions"], sessionMemory: true }),
-      "cli",
-    );
+    const cfg = createConfig({ provider: "none", sources: ["sessions"], sessionMemory: true });
+    const manager = await getFreshManager(cfg, "cli");
     const database = Reflect.get(manager, "db") as DatabaseSync;
     const sessionPath = `sessions/main/${sessionId}.jsonl`;
     await manager.sync({ reason: "index-before-forget", force: true });
@@ -554,7 +552,12 @@ describe("memory session update sync", () => {
       database.prepare("SELECT path FROM memory_index_chunks WHERE path = ?").get(sessionPath),
     ).toEqual({ path: sessionPath });
 
-    seedMemoryForgetTombstones({ agentId: "main", sessionIds: [sessionId] });
+    await forgetMemoryEntries({
+      cfg,
+      agentId: "main",
+      sessionIds: [sessionId],
+      mixedLineage: "refuse",
+    });
     await manager.sync({ reason: "forced-reindex-after-forget", force: true });
 
     expectSessionIndexRemoved(database, sessionPath);
@@ -637,7 +640,12 @@ describe("memory session update sync", () => {
       });
       try {
         await vi.waitFor(() => expect(fixture.provider.providerRuntimeActiveBatchCalls).toBe(1));
-        await forgetMemoryEntries({ cfg, agentId: "main", sessionIds: [sessionId] });
+        await forgetMemoryEntries({
+          cfg,
+          agentId: "main",
+          sessionIds: [sessionId],
+          mixedLineage: "refuse",
+        });
         releaseEmbedding();
         await expect(activeSync).rejects.toThrow("forgotten while memory indexing");
         const database = Reflect.get(manager, "db") as DatabaseSync;

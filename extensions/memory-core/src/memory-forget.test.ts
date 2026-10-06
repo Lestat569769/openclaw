@@ -38,6 +38,8 @@ import { runSessionBackfill } from "./session-backfill.js";
 import { readPhaseSignalStore, writePhaseSignalStore } from "./short-term-promotion-store.js";
 import { readShortTermRecallEntries } from "./short-term-promotion.js";
 
+const appliedDisposition = { disposition: "applied", effects: "applied" } as const;
+
 describe("memory forget", () => {
   let fixture: Awaited<ReturnType<typeof createMemoryForgetFixture>>;
   let stateDir: string;
@@ -127,7 +129,7 @@ describe("memory forget", () => {
         count: 34,
       });
       const result = await forgetMemoryEntries({ cfg, agentId: "main", sessionIds: ["target"] });
-      expect(result).toEqual({ ...preview, dryRun: false });
+      expect(result).toEqual({ ...preview, dryRun: false, ...appliedDisposition });
       expect(db.prepare("SELECT id FROM memory_index_chunks ORDER BY id").all()).toEqual(
         ["memory-keep", ...Array.from({ length: 31 }, (_, index) => `session-${index + 1}`)]
           .toSorted()
@@ -244,7 +246,7 @@ describe("memory forget", () => {
     expect(listMemorySessionTombstones({ agentId: "main" })).toEqual([]);
 
     const report = await forgetMemoryEntries({ cfg, agentId: "main", sessionIds: [selector] });
-    expect(report).toEqual({ ...preview, dryRun: false });
+    expect(report).toEqual({ ...preview, dryRun: false, ...appliedDisposition });
     expect(await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf8")).not.toContain(
       "Archived secret",
     );
@@ -311,7 +313,12 @@ describe("memory forget", () => {
     try {
       await expect(
         forgetMemoryEntries({ cfg, agentId: "main", sessionIds: ["archived"] }),
-      ).rejects.toMatchObject({ code: "ENOSPC" });
+      ).rejects.toMatchObject({
+        message: expect.stringContaining(
+          "partial effects may exist and durable source exclusion remains",
+        ),
+        cause: { code: "ENOSPC" },
+      });
     } finally {
       fault.mockRestore();
       directWriteFault.mockRestore();
@@ -377,7 +384,7 @@ describe("memory forget", () => {
       agentId: "main",
       sessionIds: ["unknown-session"],
     });
-    expect(report).toEqual({ ...preview, dryRun: false });
+    expect(report).toEqual({ ...preview, dryRun: false, ...appliedDisposition });
     const tombstones = listMemorySessionTombstones({ agentId: "main" });
     expect(tombstones).toMatchObject([{ sessionId: "unknown-session", reason: "forgotten" }]);
     expect(
@@ -448,7 +455,7 @@ describe("memory forget", () => {
       });
       expect(await fs.readFile(memoryPath, "utf8")).toBe(content);
       const report = await forgetMemoryEntries({ cfg, agentId: "main", sessionIds: ["target"] });
-      expect(report).toEqual({ ...preview, dryRun: false });
+      expect(report).toEqual({ ...preview, dryRun: false, ...appliedDisposition });
       expect(await fs.readFile(memoryPath, "utf8")).toBe(retainedMemory);
       expect(await fs.readFile(corpusPath, "utf8")).toBe(retainedCorpus);
       expect(
@@ -496,6 +503,7 @@ describe("memory forget", () => {
       cfg,
       agentId: "main",
       sessionIds: ["backfilled"],
+      mixedLineage: "refuse",
     });
     const remaining = await readShortTermRecallEntries({ workspaceDir, nowMs });
     expect(report.artifacts.shortTermEntries).toBe(1);
@@ -830,7 +838,12 @@ describe("memory forget", () => {
           try {
             await expect(
               forgetMemoryEntries({ cfg, agentId: "main", hookSources: ["gmail"] }),
-            ).rejects.toThrow(failureMessage);
+            ).rejects.toMatchObject({
+              message: expect.stringContaining(
+                "partial effects may exist and durable source exclusion remains",
+              ),
+              cause: { message: failureMessage },
+            });
           } finally {
             fault.mockRestore();
           }
@@ -851,11 +864,15 @@ describe("memory forget", () => {
           try {
             await expect(
               forgetMemoryEntries({ cfg, agentId: "main", hookSources: ["gmail"] }),
-            ).rejects.toMatchObject(
-              failure === "backup"
-                ? { cause: { message: failureMessage } }
-                : { message: failureMessage },
-            );
+            ).rejects.toMatchObject({
+              message: expect.stringContaining(
+                "partial effects may exist and durable source exclusion remains",
+              ),
+              cause:
+                failure === "backup"
+                  ? { cause: { message: failureMessage } }
+                  : { message: failureMessage },
+            });
           } finally {
             faultDb.exec("DROP TRIGGER abort_forget");
           }
@@ -871,7 +888,7 @@ describe("memory forget", () => {
         dryRun: true,
       });
       const report = await forgetMemoryEntries({ cfg, agentId: "main", hookSources: ["gmail"] });
-      expect(report).toEqual({ ...retryPreview, dryRun: false });
+      expect(report).toEqual({ ...retryPreview, dryRun: false, ...appliedDisposition });
       const survivingMemory = await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf8");
       expect(survivingMemory).toContain("Curated operator fact.");
       expect(survivingMemory).toContain("Keep the clean fact.");
@@ -986,6 +1003,7 @@ describe("memory forget", () => {
       agentId: "main",
       sessionIds: ["target"],
       dryRun: true,
+      mixedLineage: "refuse",
     });
 
     expect(report.entryKeys).toEqual([]);
@@ -1009,7 +1027,12 @@ describe("memory forget", () => {
       ).revision,
     ).toBe(revision);
 
-    const deleted = await forgetMemoryEntries({ cfg, agentId: "main", sessionIds: ["target"] });
+    const deleted = await forgetMemoryEntries({
+      cfg,
+      agentId: "main",
+      sessionIds: ["target"],
+      mixedLineage: "refuse",
+    });
     expect(deleted.artifacts.memoryFiles).toBe(0);
     expect(await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf8")).toBe(memoryContent);
     expect(listMemorySessionTombstones({ agentId: "main" })).toMatchObject([

@@ -210,6 +210,16 @@ export function registerMemoryCli(program: Command, hostOptions?: MemoryCoreRunt
       [],
     )
     .option("--since <date>", "Only include sessions observed on or after this date")
+    .option(
+      "--mixed-lineage <policy>",
+      "Mixed entries: whole-entry (legacy default) or refuse the entire operation",
+      (value: string) => {
+        if (value !== "whole-entry" && value !== "refuse") {
+          throw new Error("--mixed-lineage must be whole-entry or refuse");
+        }
+        return value;
+      },
+    )
     .option("--dry-run", "Report everything that would be deleted without writing", false)
     .option("--json", "Print the complete machine-readable deletion report")
     .action(async (opts: MemoryForgetCommandOptions) => {

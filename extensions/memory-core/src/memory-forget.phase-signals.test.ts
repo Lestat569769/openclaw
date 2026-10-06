@@ -168,7 +168,12 @@ describe("memory forget phase-signal failures", () => {
       await rowsSettled.promise;
       expect(outcome).toMatchObject({
         status: "rejected",
-        error: { cause: { message: "synthetic phase metadata failure" } },
+        error: {
+          message: expect.stringContaining(
+            "partial effects may exist and durable source exclusion remains",
+          ),
+          cause: { cause: { message: "synthetic phase metadata failure" } },
+        },
       });
       const phases = await readPhaseSignalStore(workspaceDir, observedAt);
       expect(phases.entries["later-entry"]).toEqual(laterPhase);
@@ -229,7 +234,12 @@ describe("memory forget phase-signal failures", () => {
       try {
         await expect(
           forgetMemoryEntries({ cfg, agentId: "main", sessionIds: ["target"] }),
-        ).rejects.toMatchObject({ cause: { message: "synthetic target deletion failure" } });
+        ).rejects.toMatchObject({
+          message: expect.stringContaining(
+            "partial effects may exist and durable source exclusion remains",
+          ),
+          cause: { cause: { message: "synthetic target deletion failure" } },
+        });
       } finally {
         db.exec("DROP TRIGGER abort_target_delete");
       }

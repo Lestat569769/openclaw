@@ -299,3 +299,20 @@ also stay out of dreaming ingestion and session backfill.
 - [Memory architecture](/concepts/memory-architecture)
 - [Dreaming](/concepts/dreaming)
 - [Built-in memory](/concepts/memory-builtin)
+
+### Opt-in mixed-lineage refusal
+
+The new `--mixed-lineage refuse` option refuses the entire forget operation when
+prepared or freshly rechecked lineage is mixed, before forget effects. It does
+not retain only mixed entries and claim complete erasure. Omitting the option
+(or using `--mixed-lineage whole-entry`) preserves legacy whole-entry deletion.
+Preview/refusal apply no forget effects; successful application remains distinct.
+Native locking and admission serialize cooperating writers, not direct external
+writers, and do not make multi-store cleanup universally atomic.
+
+The report explicitly discloses agent-wide recomputable-cache policy and its
+unattributed-schema/unpublished-coverage reasons, plus changed-file,
+indexed-memory-snapshot, selected-session and stale-internal-session index scopes.
+No source-selective eviction, contribution reconstruction or migration is added.
+See [the CLI contract](/cli/memory#opt-in-mixed-lineage-refusal) for result fields,
+concurrency limits and coverage boundaries.

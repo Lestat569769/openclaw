@@ -143,6 +143,7 @@ type MemoryForgetParams = {
   participants?: string[];
   since?: string;
   dryRun?: boolean;
+  mixedLineage?: "whole-entry" | "refuse";
 };
 
 type MemoryForgetContext = {
@@ -173,6 +174,13 @@ export async function forgetMemoryEntries(params: MemoryForgetParams): Promise<M
   if (!params.sessionIds?.length && !params.hookSources?.length && !params.participants?.length) {
     throw new Error("memory forget requires a session, hook source, or participant selector");
   }
+  if (
+    params.mixedLineage !== undefined &&
+    params.mixedLineage !== "whole-entry" &&
+    params.mixedLineage !== "refuse"
+  ) {
+    throw new Error("mixedLineage must be whole-entry or refuse");
+  }
   const workspaceDir = resolveAgentWorkspaceDir(params.cfg, params.agentId);
   const run = async (): Promise<MemoryForgetReport> => {
     const env = { ...process.env, OPENCLAW_STATE_DIR: resolveStateDir(process.env) };
@@ -195,14 +203,25 @@ export async function forgetMemoryEntries(params: MemoryForgetParams): Promise<M
       tombstoned: false,
     };
     try {
-      for (;;) {
-        const result = await forgetWorkspaceMemory(params, workspaceDir, context);
-        if (result.kind === "complete") {
-          return result.report;
+      try {
+        for (;;) {
+          const result = await forgetWorkspaceMemory(params, workspaceDir, context);
+          if (result.kind === "complete") {
+            return result.report;
+          }
         }
+      } finally {
+        context.database?.release();
       }
-    } finally {
-      context.database?.release();
+    } catch (cause) {
+      if (!context.tombstoned) {
+        throw cause;
+      }
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(
+        `Memory forget failed after its tombstone committed; partial effects may exist and durable source exclusion remains. Inspect retained state and resolve the underlying failure; coordinate external writers before retrying the same selectors. A retry does not restore removed material. Cause: ${detail}`,
+        { cause },
+      );
     }
   };
   // Replanning retains this workspace owner and, once acquired, its exact database borrow.
@@ -444,6 +463,15 @@ async function forgetWorkspaceMemory(
   const report: MemoryForgetReport = {
     agentId: params.agentId,
     dryRun: params.dryRun === true,
+    mixedLineagePolicy: params.mixedLineage ?? "whole-entry",
+    disposition: params.dryRun ? "preview" : sessionIds.size === 0 ? "no-targets" : "applied",
+    effects: "none",
+    cachePolicy: {
+      scope: "agent-wide-recomputable",
+      sourceAttribution: "unavailable",
+      reasons: ["unattributed-schema", "unpublished-cache-coverage"],
+    },
+    indexScope: indexPlan.indexScope,
     sessionIds: [...sessionIds].toSorted(),
     participantMatches: summarizeParticipantMatches(targets, params.participants),
     sessionResolutions: targets
@@ -477,6 +505,20 @@ async function forgetWorkspaceMemory(
     },
     refusals,
   };
+  if (params.mixedLineage === "refuse" && mixedLineageEntryKeys.size > 0) {
+    // A foreign writer after a committed marker is outside the native lock contract.
+    // Never turn a partially applied operation into a claimed no-effect refusal.
+    if (context.tombstoned) {
+      throw new Error(
+        "Mixed lineage appeared after forget committed its tombstone; partial effects may exist. Coordinate external writers before retrying.",
+      );
+    }
+    report.disposition = "refused";
+    report.refusals.push(
+      "Mixed lineage: the entire operation was refused; no forget effects were applied.",
+    );
+    return { kind: "complete", report };
+  }
   if (params.dryRun || sessionIds.size === 0) {
     return { kind: "complete", report };
   }
@@ -513,6 +555,11 @@ async function forgetWorkspaceMemory(
   const purged = await withOpenClawAgentDatabaseWrite(
     context.databaseOptions,
     () => {
+      // Native writers are serialized here. Reprepare before even additive schema
+      // setup if lineage changed during asynchronous preparation or admission.
+      if (!context.tombstoned && !lineageIsCurrent()) {
+        return false;
+      }
       if (!context.tombstoned) {
         // Prepare additive schema before the guarded transaction: its cache must
         // not survive a rollback that also removes the newly created table.
@@ -624,5 +671,6 @@ async function forgetWorkspaceMemory(
       }),
     db,
   );
+  report.effects = "applied";
   return { kind: "complete", report };
 }

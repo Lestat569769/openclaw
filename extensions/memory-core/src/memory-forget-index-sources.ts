@@ -10,6 +10,7 @@ import {
   withOpenClawAgentDatabaseReadOnly,
 } from "openclaw/plugin-sdk/sqlite-runtime";
 import { escapeRegExp } from "openclaw/plugin-sdk/text-utility-runtime";
+import type { MemoryForgetReport } from "./memory-forget-report.js";
 import { isMemorySessionIndexable } from "./memory/manager-session-sync-state.js";
 
 export type ForgetDatabase = {
@@ -36,6 +37,7 @@ export type ForgetDatabase = {
 type ForgetIndexPlan = {
   chunks: Array<Pick<ForgetDatabase["memory_index_chunks"], "id" | "path" | "source">>;
   sources: Array<ForgetDatabase["memory_index_sources"]>;
+  indexScope: MemoryForgetReport["indexScope"];
   ftsRows: number;
   vectorRows: number;
   embeddingCacheRows: number;
@@ -110,16 +112,32 @@ export async function planMemoryIndex(params: {
           changedPaths.add(chunk.path);
         }
       }
-      const chunks = indexedChunks.filter(
-        (chunk) =>
-          changedPaths.has(chunk.path) ||
-          referencesSession(chunk.path, params.agentId, params.sessionIds) ||
-          (params.sessionIds.size > 0 &&
-            chunk.source === "sessions" &&
-            (chunk.originClass === "system" ||
-              !isMemorySessionIndexable({ sessionKind: chunk.sessionKind ?? "unknown" }) ||
-              referencesSession(chunk.path, params.agentId, params.excludedSessionIds))),
-      );
+      const indexScope: MemoryForgetReport["indexScope"] = [];
+      const chunks = indexedChunks.filter((chunk) => {
+        const reasons: MemoryForgetReport["indexScope"][number]["reasons"] = [];
+        if (params.changedPaths.has(chunk.path)) {
+          reasons.push("changed-file");
+        } else if (changedPaths.has(chunk.path)) {
+          reasons.push("indexed-memory-snapshot");
+        }
+        if (referencesSession(chunk.path, params.agentId, params.sessionIds)) {
+          reasons.push("selected-session");
+        }
+        if (
+          params.sessionIds.size > 0 &&
+          chunk.source === "sessions" &&
+          (chunk.originClass === "system" ||
+            !isMemorySessionIndexable({ sessionKind: chunk.sessionKind ?? "unknown" }) ||
+            referencesSession(chunk.path, params.agentId, params.excludedSessionIds))
+        ) {
+          reasons.push("stale-internal-session");
+        }
+        if (reasons.length === 0) {
+          return false;
+        }
+        indexScope.push({ id: chunk.id, path: chunk.path, source: chunk.source, reasons });
+        return true;
+      });
       const removedSessionPaths = new Set(
         chunks.filter((chunk) => chunk.source === "sessions").map((chunk) => chunk.path),
       );
@@ -158,13 +176,22 @@ export async function planMemoryIndex(params: {
           .get() as { count?: unknown };
         embeddingCacheRows = Number(cacheCount.count ?? 0);
       }
-      return { chunks, sources, ftsRows, embeddingCacheRows, hasVectorTable, databasePath };
+      return {
+        chunks,
+        sources,
+        indexScope,
+        ftsRows,
+        embeddingCacheRows,
+        hasVectorTable,
+        databasePath,
+      };
     },
     { agentId: params.agentId },
   );
   if (!result.found) {
     return {
       chunks: [],
+      indexScope: [],
       sources: [],
       ftsRows: 0,
       vectorRows: 0,

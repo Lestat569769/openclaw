@@ -295,7 +295,12 @@ describe("memory forget source removal", () => {
       });
       try {
         const result = await forgetMemoryEntries({ cfg, agentId: "main", sessionIds });
-        expect(result).toEqual({ ...preview, dryRun: false });
+        expect(result).toEqual({
+          ...preview,
+          dryRun: false,
+          disposition: "applied",
+          effects: "applied",
+        });
         expect(db.prepare("SELECT * FROM memory_index_sources ORDER BY id").all()).toEqual(
           survivors,
         );

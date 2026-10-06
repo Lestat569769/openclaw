@@ -99,7 +99,12 @@ describe("memory forget curated writes", () => {
       agentId: "main",
       sessionIds: ["target"],
     });
-    expect(report).toEqual({ ...preview, dryRun: false });
+    expect(report).toEqual({
+      ...preview,
+      dryRun: false,
+      disposition: "applied",
+      effects: "applied",
+    });
     expect(report.artifacts.memoryFiles).toBe(0);
     expect(await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf8")).toBe(curatedContent);
   });
@@ -217,7 +222,12 @@ describe("memory forget curated writes", () => {
     expect(await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf8")).toBe(memoryContent);
 
     const report = await forgetMemoryEntries({ cfg, agentId: "main", sessionIds: ["target"] });
-    expect(report).toEqual({ ...preview, dryRun: false });
+    expect(report).toEqual({
+      ...preview,
+      dryRun: false,
+      disposition: "applied",
+      effects: "applied",
+    });
     expect(report.artifacts.memoryFiles).toBe(0);
     expect(await fs.readFile(path.join(workspaceDir, "MEMORY.md"), "utf8")).toBe(memoryContent);
   });

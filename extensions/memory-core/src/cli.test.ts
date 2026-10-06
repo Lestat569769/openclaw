@@ -402,9 +402,27 @@ describe("memory cli", () => {
     }));
   }
 
+  it("rejects an invalid mixed-lineage policy before invoking forget", async () => {
+    await expect(
+      runMemoryCli(["forget", "--session", "fixture-target", "--mixed-lineage", "selective"]),
+    ).rejects.toThrow("--mixed-lineage must be whole-entry or refuse");
+    expect(forgetMemoryEntries).not.toHaveBeenCalled();
+  });
+
   it("forwards repeated forget selectors and reports quoted lines and curated writes in both output formats", async () => {
     getRuntimeConfig.mockReturnValue(configuredAgents);
     const report: MemoryForgetReport = {
+      mixedLineagePolicy: "refuse",
+      disposition: "refused",
+      effects: "none",
+      cachePolicy: {
+        scope: "agent-wide-recomputable",
+        sourceAttribution: "unavailable",
+        reasons: ["unattributed-schema", "unpublished-cache-coverage"],
+      },
+      indexScope: [
+        { id: "fixture-chunk", path: "MEMORY.md", source: "memory", reasons: ["changed-file"] },
+      ],
       participantMatches: [
         {
           actorId: "person-one",
@@ -462,6 +480,8 @@ describe("memory cli", () => {
       "person-one",
       "--participant",
       "person-two",
+      "--mixed-lineage",
+      "refuse",
       "--since",
       "2026-01-01",
       "--agent",
@@ -477,6 +497,7 @@ describe("memory cli", () => {
       hookSources: ["gmail", "email"],
       participants: ["person-one", "person-two"],
       since: "2026-01-01",
+      mixedLineage: "refuse",
       dryRun: true,
     });
     expect(firstWrittenJsonArg(json)).toEqual(report);
@@ -486,6 +507,13 @@ describe("memory cli", () => {
     await runMemoryCli(["forget", "--session", "session-one", "--agent", "ops", "--dry-run"]);
     const output = firstMockCallArg(logs, "memory forget output");
     expect(output).toContain("Source transcripts retained: 2");
+    expect(output).toContain("Disposition: refused; effects: none");
+    expect(output).toContain("Planned entries: 1");
+    expect(output).not.toContain("Deleted entries:");
+    expect(output).toContain(
+      "Cache policy: agent-wide-recomputable; source attribution unavailable; reasons: unattributed-schema, unpublished-cache-coverage",
+    );
+    expect(output).toContain("Index scope: fixture-chunk (MEMORY.md, memory): changed-file");
     expect(output).toContain(
       'Raw participant selector: person-one: {"type":"profile","id":"person-one"}, {"type":"agent","id":"person-one"}',
     );

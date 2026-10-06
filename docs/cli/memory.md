@@ -221,15 +221,16 @@ openclaw memory forget --agent <agent-id> --participant <actor-id> --dry-run --j
 
 After checking the report, repeat the intended command without `--dry-run`.
 
-| Flag                       | Effect                                                                                                         |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `--agent <id>`             | Select one agent. Defaults to the default agent, not all agents.                                               |
-| `--session <id-or-key>`    | Select by session ID or key; repeatable.                                                                       |
-| `--hook-source <source>`   | Select live sessions with this recorded external-content hook source; repeatable.                              |
-| `--participant <actor-id>` | Select live sessions with this recorded participant actor ID; repeatable.                                      |
-| `--since <date>`           | Include sessions created on or after the date. Use an ISO timestamp with a timezone for an unambiguous cutoff. |
-| `--dry-run`                | Compute a report without changing memory files, indexes, plugin state, or forgotten-session records.           |
-| `--json`                   | Print the full report as JSON.                                                                                 |
+| Flag                       | Effect                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `--agent <id>`             | Select one agent. Defaults to the default agent, not all agents.                                                    |
+| `--session <id-or-key>`    | Select by session ID or key; repeatable.                                                                            |
+| `--hook-source <source>`   | Select live sessions with this recorded external-content hook source; repeatable.                                   |
+| `--participant <actor-id>` | Select live sessions with this recorded participant actor ID; repeatable.                                           |
+| `--since <date>`           | Include sessions created on or after the date. Use an ISO timestamp with a timezone for an unambiguous cutoff.      |
+| `--mixed-lineage <policy>` | `refuse` rejects the entire mixed-lineage operation; `whole-entry` (legacy default) deletes selected entries whole. |
+| `--dry-run`                | Compute a report without changing memory files, indexes, plugin state, or forgotten-session records.                |
+| `--json`                   | Print the full report as JSON.                                                                                      |
 
 ### Session selection
 
@@ -271,7 +272,7 @@ and remain selected.
 | `agentId`, `dryRun`                | Store selected and whether this was a preview.                                                                                                       |
 | `sessionIds`, `sessionResolutions` | Selected IDs and how each resolved; a resolution may also include `sessionKey`.                                                                      |
 | `entryKeys`                        | Entry keys with at least one origin in the selected sessions.                                                                                        |
-| `mixedLineageEntryKeys`            | Selected entries that also have unselected origins; they are removed whole.                                                                          |
+| `mixedLineageEntryKeys`            | Selected entries with unselected origins; removed whole by default, or operation-wide refusal with `--mixed-lineage refuse`.                         |
 | `untargetableEntryKeys`            | Promotion markers found without origin rows in this agent's store. This does not enumerate unmarked prose.                                           |
 | `curatedWrites`                    | Files to review, with `relativePath` and `observedAt` (Unix milliseconds). Includes supported recorded write attempts, which may not have succeeded. |
 | `artifacts`                        | Counts of matching files, entries, lines, and store rows described below.                                                                            |
@@ -588,3 +589,54 @@ unavailable, the command fails fast. This requires a gateway supporting the
 
 - [CLI reference](/cli)
 - [Memory overview](/concepts/memory)
+
+### Opt-in mixed-lineage refusal
+
+`openclaw memory forget --agent <agent-id> --session <id-or-key> --mixed-lineage refuse --dry-run --json`
+previews an operation-wide refusal when a selected entry also has unselected
+origins. Repeat without `--dry-run` only when actual deletion is intended.
+`--mixed-lineage refuse` is opt-in; omitting it or using `--mixed-lineage whole-entry`
+keeps legacy whole-entry deletion. Refusal does not skip mixed entries and claim
+complete source erasure: all selected material and surviving support remain.
+
+The report adds `mixedLineagePolicy`, `disposition` (`preview`, `refused`,
+`applied`, or `no-targets`) and `effects` (`none` or `applied`). A refused preview
+has `dryRun: true`, `disposition: refused`, and `effects: none`; it is not an
+application. Artifact counts describe the proposed plan, not effects on refusal.
+A preview never reserves the later plan. Apply checks freshly prepared lineage
+again through native workspace locking and database-write admission, and
+reprepares before tombstone/schema setup if it changed. For cooperating native
+writers, refusal precedes forget effects on tombstones, cache, index, files,
+plugin state, dedup state and origins.
+The native admission/lock lifecycle itself is not a forget effect.
+
+This is not universal cross-store atomicity. Direct external writers that bypass
+native serialization can change lineage between the pre-schema check and
+additive tombstone-schema creation, before the transaction checks lineage again.
+In that interval, a later refusal can leave the additive schema present even
+without a committed tombstone. External writers can also race the committed
+tombstone and subsequent multi-store cleanup. Coordinate those writers
+separately; the no-effect refusal guarantee does not cover bypassing writers.
+A failure after a committed marker can
+leave partial effects and durable exclusion, and is not a no-effect refusal.
+Existing file snapshot and publication/forgotten-source guards remain in force.
+
+`cachePolicy.scope` is `agent-wide-recomputable`, `sourceAttribution` is
+`unavailable`, and `reasons` are `unattributed-schema` and
+`unpublished-cache-coverage`. The cache has no source field; shared hashes and
+unpublished embeddings prevent source-exclusive attribution. A successful
+nonempty apply still clears the whole agent's recomputable cache; refusal and
+preview clear none. This does not remove unrelated authoritative prose or all
+unrelated published chunks.
+
+`indexScope` lists selected chunk IDs, paths, sources and reasons: `changed-file`
+invalidates all chunks from rewritten files (including surviving text whose
+snapshot/offsets are obsolete); `indexed-memory-snapshot` covers still-indexed
+selected evidence even if another workspace scrubbed its file; `selected-session`
+covers matching source paths; `stale-internal-session` covers excluded/internal
+session artifacts. Reasons may overlap. Published paths outside those scopes
+are not selected merely because cache cleanup is agent-wide.
+
+Missing lineage and untracked/freeform paraphrases remain coverage limits.
+Refusal neither reconstructs contributions nor establishes comprehensive erasure.
+No schema migration or source-selective cache eviction is introduced.
