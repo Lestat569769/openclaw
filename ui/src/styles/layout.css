@@ -3442,6 +3442,53 @@ a:is(
   padding-right: 0;
 }
 
+/* Coarse-pointer controls are 44px wide. Three controls plus a child toggle
+   cannot share the pinned row's title line, even at the normal sidebar width.
+   Give the native session link its own line and keep the existing actions in a
+   separate hit area below it. The mobile drawer has its own menu-only layout. */
+@media (hover: none), (pointer: coarse) {
+  .shell:not(.shell--mobile-nav) .sidebar-zone-entry .sidebar-recent-session {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .shell:not(.shell--mobile-nav) .sidebar-zone-entry .sidebar-recent-session__link {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .shell:not(.shell--mobile-nav) .sidebar-zone-entry .sidebar-child-session-toggle {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .shell:not(.shell--mobile-nav)
+    .sidebar-zone-entry
+    .sidebar-recent-session:not(.sidebar-recent-session--child)
+    .sidebar-recent-session__text,
+  .shell:not(.shell--mobile-nav) .sidebar-zone-entry .sidebar-recent-session__title-row {
+    padding-right: 0;
+  }
+
+  .shell:not(.shell--mobile-nav)
+    .sidebar-zone-entry
+    .sidebar-recent-session:not(.sidebar-recent-session--child)
+    > .sidebar-recent-session__aside {
+    position: static;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: stretch;
+    transform: none;
+  }
+
+  .shell:not(.shell--mobile-nav)
+    .sidebar-zone-entry
+    .sidebar-recent-session:has(> .sidebar-child-session-toggle)
+    > .sidebar-recent-session__aside {
+    grid-column: 2;
+  }
+}
+
 /* The header identifies the active agent or the whole workspace. */
 .sidebar-brand > openclaw-sidebar-agent-card,
 .sidebar-workspace-header {
